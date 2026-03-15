@@ -2,6 +2,7 @@
 
 import { useRef, useState, useEffect, useCallback } from "react";
 import { nearestColorName, rgbToCmyk, isLight } from "@/lib/color";
+import { shareColor } from "@/lib/share";
 import { useStorage } from "@/hooks/useStorage";
 import SavedPanel from "@/components/SavedPanel";
 
@@ -348,6 +349,7 @@ function ColorSheet({
   const [aiName, setAiName] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [saved, setSaved] = useState(isSaved);
+  const [shareStatus, setShareStatus] = useState<"idle" | "sharing" | "copied" | "error">("idle");
 
   const cmyk = rgbToCmyk(color.r, color.g, color.b);
   const colorName = nearestColorName(color.hex);
@@ -428,8 +430,8 @@ function ColorSheet({
         </button>
       </div>
 
-      {/* Save button */}
-      <div className="px-5 pb-3">
+      {/* Save + Share buttons */}
+      <div className="px-5 pb-3 flex gap-3">
         <button
           onClick={() => {
             if (!saved) {
@@ -437,13 +439,38 @@ function ColorSheet({
               setSaved(true);
             }
           }}
-          className={`w-full rounded-xl py-3 text-sm font-semibold transition ${
+          className={`flex-1 rounded-xl py-3 text-sm font-semibold transition ${
             saved
               ? "bg-white/8 text-white/30"
               : "bg-white text-black active:bg-white/80"
           }`}
         >
           {saved ? "Saved ✓" : "Save color"}
+        </button>
+
+        <button
+          onClick={async () => {
+            setShareStatus("sharing");
+            const result = await shareColor({
+              hex: color.hex,
+              r: color.r,
+              g: color.g,
+              b: color.b,
+              name: aiName ?? colorName,
+            });
+            setShareStatus(result === "copied" ? "copied" : "idle");
+            if (result === "copied") setTimeout(() => setShareStatus("idle"), 2000);
+          }}
+          disabled={shareStatus === "sharing"}
+          className="flex items-center justify-center gap-1.5 rounded-xl bg-white/10 px-5 py-3 text-sm text-white/70 transition active:bg-white/20 disabled:opacity-40"
+        >
+          {shareStatus === "sharing" ? (
+            <span className="animate-pulse text-xs">…</span>
+          ) : shareStatus === "copied" ? (
+            <span className="text-xs">Copied ✓</span>
+          ) : (
+            <span>↑ Share</span>
+          )}
         </button>
       </div>
 
