@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { isLight } from "@/lib/color";
 import type { SavedColor, Palette } from "@/lib/storage";
+import { exportPng, exportCss, exportJson, exportAse } from "@/lib/export";
 
 interface Props {
   colors: SavedColor[];
@@ -231,25 +232,54 @@ export default function SavedPanel({
                   </div>
 
                   {/* Expanded colors */}
-                  {expandedPalette === p.id && paletteColors.length > 0 && (
-                    <div className="grid grid-cols-3 gap-2 border-t border-white/8 px-4 pb-3 pt-2">
-                      {paletteColors.map((c) => (
-                        <div key={c.id} className="relative">
-                          <div
-                            className="h-16 w-full rounded-xl"
-                            style={{ backgroundColor: c.hex }}
-                          />
-                          <p className="mt-1 text-center font-mono text-xs text-white/50 uppercase">
-                            {c.hex}
-                          </p>
-                          <button
-                            onClick={() => onRemoveFromPalette(p.id, c.id)}
-                            className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-zinc-900 text-[10px] text-white/50 active:text-red-400"
-                          >
-                            ✕
-                          </button>
+                  {expandedPalette === p.id && (
+                    <div className="border-t border-white/8 px-4 pt-2 pb-4">
+                      {paletteColors.length > 0 ? (
+                        <div className="grid grid-cols-3 gap-2 mb-4">
+                          {paletteColors.map((c) => (
+                            <div key={c.id} className="relative">
+                              <div
+                                className="h-16 w-full rounded-xl"
+                                style={{ backgroundColor: c.hex }}
+                              />
+                              <p className="mt-1 text-center font-mono text-xs text-white/50 uppercase">
+                                {c.hex}
+                              </p>
+                              <button
+                                onClick={() => onRemoveFromPalette(p.id, c.id)}
+                                className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-zinc-900 text-[10px] text-white/50 active:text-red-400"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      ) : (
+                        <p className="text-xs text-white/30 py-2 mb-3">
+                          No colors yet — save a color and add it here.
+                        </p>
+                      )}
+
+                      {/* Export buttons */}
+                      {paletteColors.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          <p className="w-full text-xs text-white/30 mb-1">Export</p>
+                          {(["PNG", "CSS", "JSON", "ASE"] as const).map((fmt) => (
+                            <button
+                              key={fmt}
+                              onClick={() => {
+                                if (fmt === "PNG") exportPng(p, paletteColors);
+                                if (fmt === "CSS") exportCss(p, paletteColors);
+                                if (fmt === "JSON") exportJson(p, paletteColors);
+                                if (fmt === "ASE") exportAse(p, paletteColors);
+                              }}
+                              className="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-mono text-white/60 active:bg-white/20"
+                            >
+                              {fmt}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

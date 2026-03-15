@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
+    "ase-util": "^1.0.3",
     "color-name-list": "^14.29.0",
     "nearest-color": "^0.4.4",
     "next": "16.1.6",
