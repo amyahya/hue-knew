@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useEffect, useCallback } from "react";
+import { nearestColorName, rgbToCmyk, isLight } from "@/lib/color";
 
 interface SampledColor {
   hex: string;
@@ -21,13 +22,11 @@ function toVideoCoords(
 
   let renderWidth: number, renderHeight: number, offsetX: number, offsetY: number;
   if (videoAspect > containerAspect) {
-    // video wider than container → height fills, sides crop
     renderHeight = rect.height;
     renderWidth = renderHeight * videoAspect;
     offsetX = (rect.width - renderWidth) / 2;
     offsetY = 0;
   } else {
-    // video taller than container → width fills, top/bottom crop
     renderWidth = rect.width;
     renderHeight = renderWidth / videoAspect;
     offsetX = 0;
@@ -36,8 +35,8 @@ function toVideoCoords(
 
   const scaleX = video.videoWidth / renderWidth;
   const scaleY = video.videoHeight / renderHeight;
-  const vx = ((clientX - rect.left) - offsetX) * scaleX;
-  const vy = ((clientY - rect.top) - offsetY) * scaleY;
+  const vx = (clientX - rect.left - offsetX) * scaleX;
+  const vy = (clientY - rect.top - offsetY) * scaleY;
 
   return {
     vx: Math.max(0, Math.min(video.videoWidth - 1, vx)),
@@ -47,11 +46,6 @@ function toVideoCoords(
 
 function rgbToHex(r: number, g: number, b: number): string {
   return "#" + [r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("");
-}
-
-// Perceived luminance — decides whether text on the color swatch should be black or white
-function isLight(r: number, g: number, b: number): boolean {
-  return 0.299 * r + 0.587 * g + 0.114 * b > 160;
 }
 
 export default function CameraView() {
@@ -77,7 +71,6 @@ export default function CameraView() {
         streamRef.current = s;
         if (videoRef.current) videoRef.current.srcObject = s;
       } catch {
-        // iOS Safari fallback: request any camera without facingMode constraint
         try {
           const s = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
           streamRef.current = s;
@@ -117,7 +110,7 @@ export default function CameraView() {
     ctx.drawImage(video, 0, 0);
 
     const { vx, vy } = toVideoCoords(video, clientX, clientY);
-    const half = 2; // 5×5 grid
+    const half = 2;
     const px = Math.max(half, Math.min(video.videoWidth - half - 1, Math.round(vx)));
     const py = Math.max(half, Math.min(video.videoHeight - half - 1, Math.round(vy)));
 
@@ -126,10 +119,9 @@ export default function CameraView() {
     for (let i = 0; i < data.length; i += 4) {
       r += data[i]; g += data[i + 1]; b += data[i + 2];
     }
-    const count = 25;
-    r = Math.round(r / count);
-    g = Math.round(g / count);
-    b = Math.round(b / count);
+    r = Math.round(r / 25);
+    g = Math.round(g / 25);
+    b = Math.round(b / 25);
 
     return { hex: rgbToHex(r, g, b), r, g, b };
   }, []);
@@ -146,42 +138,39 @@ export default function CameraView() {
 
     const LOUPE_R = 64;
     const ZOOM = 6;
-    // Position loupe above finger, clamped to screen
     const cx = Math.max(LOUPE_R + 8, Math.min(canvas.width - LOUPE_R - 8, clientX));
     const cy = Math.max(LOUPE_R + 8, clientY - 120);
 
-    // Clip to circle
     ctx.save();
     ctx.beginPath();
     ctx.arc(cx, cy, LOUPE_R, 0, Math.PI * 2);
     ctx.clip();
 
-    // Draw zoomed video region
     const { vx, vy } = toVideoCoords(video, clientX, clientY);
+    const srcW = (LOUPE_R * 2) / ZOOM;
+    const srcH = (LOUPE_R * 2) / ZOOM;
+    // Convert source size from screen pixels to video pixels
     const rect = video.getBoundingClientRect();
-    const scaleX = video.videoWidth / rect.width;
-    const scaleY = video.videoHeight / rect.height;
-    // source rect in video pixels
-    const srcW = (LOUPE_R * 2) / ZOOM / scaleX * scaleX; // simplify: LOUPE_R*2/ZOOM in video px
-    const srcH = (LOUPE_R * 2) / ZOOM / scaleY * scaleY;
-    const srcX = vx - srcW / 2;
-    const srcY = vy - srcH / 2;
+    const videoAspect = video.videoWidth / video.videoHeight;
+    const containerAspect = rect.width / rect.height;
+    const renderWidth = videoAspect > containerAspect ? rect.height * videoAspect : rect.width;
+    const scaleX = video.videoWidth / renderWidth;
+    const srcWv = srcW * scaleX;
+    const srcHv = srcH * scaleX;
 
     ctx.drawImage(
       video,
-      srcX, srcY, srcW, srcH,
+      vx - srcWv / 2, vy - srcHv / 2, srcWv, srcHv,
       cx - LOUPE_R, cy - LOUPE_R, LOUPE_R * 2, LOUPE_R * 2
     );
     ctx.restore();
 
-    // White ring
     ctx.beginPath();
     ctx.arc(cx, cy, LOUPE_R, 0, Math.PI * 2);
     ctx.strokeStyle = "rgba(255,255,255,0.95)";
     ctx.lineWidth = 2.5;
     ctx.stroke();
 
-    // Crosshair
     ctx.strokeStyle = "rgba(255,255,255,0.9)";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
@@ -192,12 +181,10 @@ export default function CameraView() {
 
   const clearLoupe = useCallback(() => {
     const canvas = loupeCanvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    ctx?.clearRect(0, 0, canvas.width, canvas.height);
+    const ctx = canvas?.getContext("2d");
+    if (canvas && ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
   }, []);
 
-  // Non-passive touch listeners (required for preventDefault to work)
   useEffect(() => {
     const canvas = loupeCanvasRef.current;
     if (!canvas) return;
@@ -235,7 +222,6 @@ export default function CameraView() {
     canvas.addEventListener("touchstart", onTouchStart, { passive: false });
     canvas.addEventListener("touchmove", onTouchMove, { passive: false });
     canvas.addEventListener("touchend", onTouchEnd, { passive: false });
-
     return () => {
       canvas.removeEventListener("touchstart", onTouchStart);
       canvas.removeEventListener("touchmove", onTouchMove);
@@ -243,7 +229,6 @@ export default function CameraView() {
     };
   }, [drawLoupe, clearLoupe, sampleAt]);
 
-  // Mouse click for desktop testing
   const handleClick = useCallback((e: React.MouseEvent) => {
     const color = sampleAt(e.clientX, e.clientY);
     if (color) {
@@ -262,7 +247,6 @@ export default function CameraView() {
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-black">
-      {/* Live camera feed */}
       <video
         ref={videoRef}
         autoPlay
@@ -271,10 +255,8 @@ export default function CameraView() {
         className="absolute inset-0 h-full w-full object-cover"
       />
 
-      {/* Hidden canvas for pixel sampling */}
       <canvas ref={sampleCanvasRef} className="hidden" />
 
-      {/* Loupe overlay — touch/click target */}
       <canvas
         ref={loupeCanvasRef}
         className="absolute inset-0"
@@ -282,67 +264,145 @@ export default function CameraView() {
         onClick={handleClick}
       />
 
-      {/* Tap hint */}
       {!sampledColor && (
         <p className="pointer-events-none absolute bottom-10 left-0 right-0 text-center text-sm text-white/40 select-none">
           Tap anywhere to identify a color
         </p>
       )}
 
-      {/* Color sheet */}
       {showSheet && sampledColor && (
-        <ColorSheet
-          color={sampledColor}
-          onClose={() => setShowSheet(false)}
-        />
+        <ColorSheet color={sampledColor} onClose={() => setShowSheet(false)} />
       )}
     </div>
   );
 }
 
-function ColorSheet({ color, onClose }: { color: SampledColor; onClose: () => void }) {
-  const light = isLight(color.r, color.g, color.b);
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    await navigator.clipboard.writeText(value);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
 
   return (
-    <div className="absolute bottom-0 left-0 right-0 rounded-t-2xl bg-black/80 backdrop-blur-xl">
-      {/* Drag handle */}
-      <div className="flex justify-center pt-3 pb-1">
+    <button
+      onClick={copy}
+      className="flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-mono text-white/70 transition active:bg-white/20"
+    >
+      <span className="uppercase tracking-wider">{label}</span>
+      <span className="text-white/40">{copied ? "✓" : "⎘"}</span>
+    </button>
+  );
+}
+
+function ColorSheet({ color, onClose }: { color: SampledColor; onClose: () => void }) {
+  const [aiName, setAiName] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+
+  const cmyk = rgbToCmyk(color.r, color.g, color.b);
+  const colorName = nearestColorName(color.hex);
+  const light = isLight(color.r, color.g, color.b);
+
+  const rgbStr = `rgb(${color.r}, ${color.g}, ${color.b})`;
+  const cmykStr = `cmyk(${cmyk.c}%, ${cmyk.m}%, ${cmyk.y}%, ${cmyk.k}%)`;
+
+  async function getRicherName() {
+    setAiLoading(true);
+    try {
+      const res = await fetch("/api/name-color", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hex: color.hex, r: color.r, g: color.g, b: color.b }),
+      });
+      const data = await res.json();
+      setAiName(data.name ?? null);
+    } catch {
+      // silently fail — not critical
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
+  return (
+    <div className="absolute bottom-0 left-0 right-0 rounded-t-2xl bg-zinc-900/95 backdrop-blur-xl">
+      {/* Handle */}
+      <div className="flex justify-center pt-3 pb-2">
         <div className="h-1 w-10 rounded-full bg-white/20" />
       </div>
 
-      <div className="flex items-center gap-4 px-6 py-5">
-        {/* Swatch */}
+      {/* Swatch + name */}
+      <div className="flex items-start gap-4 px-5 pb-4">
         <div
-          className="flex h-20 w-20 flex-shrink-0 items-center justify-center rounded-2xl shadow-xl"
+          className="h-20 w-20 flex-shrink-0 rounded-2xl shadow-xl flex items-end justify-center pb-1"
           style={{ backgroundColor: color.hex }}
         >
           <span
-            className="font-mono text-xs font-semibold uppercase"
-            style={{ color: light ? "rgba(0,0,0,0.5)" : "rgba(255,255,255,0.5)" }}
+            className="font-mono text-[10px] font-semibold uppercase"
+            style={{ color: light ? "rgba(0,0,0,0.45)" : "rgba(255,255,255,0.45)" }}
           >
             {color.hex}
           </span>
         </div>
 
-        {/* Values */}
-        <div className="flex-1">
-          <p className="font-mono text-2xl font-semibold uppercase tracking-wide text-white">
-            {color.hex}
+        <div className="flex-1 min-w-0 pt-1">
+          {/* Color name */}
+          <p className="text-white font-semibold text-lg leading-tight truncate">
+            {aiName ?? colorName}
           </p>
-          <p className="mt-1 font-mono text-sm text-white/50">
-            rgb({color.r}, {color.g}, {color.b})
-          </p>
+          {aiName && (
+            <p className="text-white/40 text-xs mt-0.5 truncate">{colorName}</p>
+          )}
+
+          {/* AI name button */}
+          {!aiName && (
+            <button
+              onClick={getRicherName}
+              disabled={aiLoading}
+              className="mt-2 flex items-center gap-1.5 rounded-lg bg-white/8 px-3 py-1.5 text-xs text-white/50 transition active:bg-white/15 disabled:opacity-40"
+            >
+              {aiLoading ? (
+                <span className="animate-pulse">Finding a poetic name…</span>
+              ) : (
+                <>✦ <span>Get a richer name</span></>
+              )}
+            </button>
+          )}
         </div>
 
-        {/* Close */}
         <button
           onClick={onClose}
-          className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white/60 active:bg-white/20"
+          className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-white/50 text-sm active:bg-white/20 mt-1"
           aria-label="Close"
         >
           ✕
         </button>
       </div>
+
+      {/* Values */}
+      <div className="border-t border-white/8 px-5 py-4 space-y-2.5">
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-white/40 w-10">HEX</span>
+          <span className="font-mono text-sm text-white/80 uppercase flex-1 px-3">{color.hex}</span>
+          <CopyButton value={color.hex.toUpperCase()} label="copy" />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-white/40 w-10">RGB</span>
+          <span className="font-mono text-sm text-white/80 flex-1 px-3">{rgbStr}</span>
+          <CopyButton value={rgbStr} label="copy" />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-white/40 w-10">CMYK</span>
+          <span className="font-mono text-sm text-white/80 flex-1 px-3">{cmykStr}</span>
+          <CopyButton value={cmykStr} label="copy" />
+        </div>
+      </div>
+
+      {/* Safe area pad */}
+      <div className="h-6" />
     </div>
   );
 }

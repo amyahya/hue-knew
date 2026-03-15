@@ -9,6 +9,9 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
+    "color-name-list": "^14.29.0",
+    "nearest-color": "^0.4.4",
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3"
