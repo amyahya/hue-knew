@@ -2,6 +2,8 @@
 
 import { useRef, useState, useEffect, useCallback } from "react";
 import { nearestColorName, rgbToCmyk, isLight } from "@/lib/color";
+import { useStorage } from "@/hooks/useStorage";
+import SavedPanel from "@/components/SavedPanel";
 
 interface SampledColor {
   hex: string;
@@ -59,6 +61,8 @@ export default function CameraView() {
   const [error, setError] = useState<string | null>(null);
   const [sampledColor, setSampledColor] = useState<SampledColor | null>(null);
   const [showSheet, setShowSheet] = useState(false);
+  const [showSaved, setShowSaved] = useState(false);
+  const storage = useStorage();
 
   // Start camera
   useEffect(() => {
@@ -270,8 +274,41 @@ export default function CameraView() {
         </p>
       )}
 
+      {/* Saved colors button */}
+      <button
+        onClick={() => setShowSaved(true)}
+        className="absolute top-12 right-5 flex items-center gap-1.5 rounded-full bg-black/40 px-3 py-2 text-sm text-white/70 backdrop-blur-md active:bg-black/60"
+        aria-label="Saved colors"
+      >
+        <span>⊞</span>
+        {storage.colors.length > 0 && (
+          <span className="text-xs text-white/50">{storage.colors.length}</span>
+        )}
+      </button>
+
       {showSheet && sampledColor && (
-        <ColorSheet color={sampledColor} onClose={() => setShowSheet(false)} />
+        <ColorSheet
+          color={sampledColor}
+          onClose={() => setShowSheet(false)}
+          onSave={(name) => {
+            storage.save({ hex: sampledColor.hex, r: sampledColor.r, g: sampledColor.g, b: sampledColor.b, name });
+          }}
+          isSaved={storage.colors.some((c) => c.hex === sampledColor.hex)}
+        />
+      )}
+
+      {showSaved && (
+        <SavedPanel
+          colors={storage.colors}
+          palettes={storage.palettes}
+          onClose={() => setShowSaved(false)}
+          onDeleteColor={storage.removeColor}
+          onAddPalette={storage.addPalette}
+          onRenamePalette={storage.updatePaletteName}
+          onDeletePalette={storage.removePalette}
+          onAddToPalette={storage.addToPalette}
+          onRemoveFromPalette={storage.removeFromPalette}
+        />
       )}
     </div>
   );
@@ -297,9 +334,20 @@ function CopyButton({ value, label }: { value: string; label: string }) {
   );
 }
 
-function ColorSheet({ color, onClose }: { color: SampledColor; onClose: () => void }) {
+function ColorSheet({
+  color,
+  onClose,
+  onSave,
+  isSaved,
+}: {
+  color: SampledColor;
+  onClose: () => void;
+  onSave: (name: string) => void;
+  isSaved: boolean;
+}) {
   const [aiName, setAiName] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [saved, setSaved] = useState(isSaved);
 
   const cmyk = rgbToCmyk(color.r, color.g, color.b);
   const colorName = nearestColorName(color.hex);
@@ -377,6 +425,25 @@ function ColorSheet({ color, onClose }: { color: SampledColor; onClose: () => vo
           aria-label="Close"
         >
           ✕
+        </button>
+      </div>
+
+      {/* Save button */}
+      <div className="px-5 pb-3">
+        <button
+          onClick={() => {
+            if (!saved) {
+              onSave(aiName ?? colorName);
+              setSaved(true);
+            }
+          }}
+          className={`w-full rounded-xl py-3 text-sm font-semibold transition ${
+            saved
+              ? "bg-white/8 text-white/30"
+              : "bg-white text-black active:bg-white/80"
+          }`}
+        >
+          {saved ? "Saved ✓" : "Save color"}
         </button>
       </div>
 
